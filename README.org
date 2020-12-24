@@ -1,0 +1,73 @@
+#+TITLE: elpm
+/A elisp package manager with a cli/
+
+* About
+I want to be able to install packages and use them without being married to any particular emacs framework (like doom, spacemacs or my own config). Anyway, this package uses =straight.el= to do the actual heavy lifting of managing the packages. This package adds a package file, =elpm-packages.el=, a cli for installing packages (=elpm=) and the ability to load packages (relatively easily) into any emacs instance -- in doom, spacemacs & even in =emacs -Q=.
+* Quick start
+** Setup
+1. Clone this repo to your favorite location
+    #+begin_src bash
+git clone https://github.com/tylerware/elpm
+    #+end_src
+2. Add the repository to your elisp load path
+   - By environment variable:
+     #+begin_src bash
+export EMACSLOADPATH="${EMACSLOADPATH}:/path/to/elmp"
+     #+end_src
+   - By elisp:
+     #+begin_src elisp
+(add-to-list 'load-path "/path/to/elmp")
+     #+end_src
+3. Add =./bin= to your systems =PATH= environment variable
+
+** Basic usage
+1. Install some packages (into =/tmp/straight=)
+   - via CLI
+     #+begin_src bash
+cd /tmp
+elpm evil \
+    '(el-patch :type git :host github :repo "raxod502/el-patch")' # supports straight recipes
+     #+end_src
+   - via elisp
+      #+begin_src elisp
+(require 'elpm)
+(let ((elpm-directory "/tmp"))
+  (elpm-bootstrap)
+  (elpm-use-packages
+   '(evil
+     (el-patch :type git :host github :repo "raxod502/el-patch"))))
+      #+end_src
+2. Use the packages installed in =/tmp/straight=
+   #+begin_src elisp
+(require 'elpm)
+(elpm-bootstrap "/tmp")
+(require 'evil)
+(evil-mode)
+   #+end_src
+   You can use the packages you installed in any emacs instance.
+
+* The CLI
+This is the =elpm= cli definition.
+#+begin_src elisp :tangle bin/elpm :shebang #!/usr/bin/env -S emacs -Q --script # -*- mode: emacs-lisp; lexical-binding: t; -*-
+(add-to-list 'load-path
+             (replace-regexp-in-string "bin/[^/]+$" "" load-file-name))
+
+(require 'elpm)
+(let ((elpm-directory default-directory))
+  (elpm-bootstrap)
+  (when argv
+    (elpm-use-packages
+     (mapcar
+      (lambda (arg)
+        (car (read-from-string arg)))
+      argv))))
+#+end_src
+* Package file
+The =elpm-packages.el= file records what packages have been installed. Here is an example of what one looks like:
+#+begin_src elisp
+(:version 0
+ :recipes
+ (evil
+  (el-patch :type git :host github :repo "raxod502/el-patch")))
+#+end_src
+Installing a package with =(elpm-use-package ...)= or =elpm= will add to the =:recipes= section of the file. It's worth noting that any packages that are listed in =:recipes= that aren't installed will be installed during the next running of =elpm= or =(elpm-bootstrap)=.
