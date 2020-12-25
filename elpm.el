@@ -63,9 +63,9 @@
         (unless (equal existing-recipe recipe)
           (when existing-recipe
             (setq existing-recipes (delete existing-recipe existing-recipes)))
-          (setq packages-plist
-                (plist-put packages-plist
-                           :recipes (append existing-recipes (list recipe)))))))
+          (plist-put packages-plist
+                     :recipes (append (plist-get packages-plist :recipes)
+                                      (list recipe))))))
     (elpm-save-packages-plist packages-plist directory)))
 
 (defun elpm-use-package (recipe &optional directory)
