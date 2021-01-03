@@ -31,16 +31,15 @@ elpm evil \
    - via elisp
       #+begin_src elisp
 (require 'elpm)
-(let ((elpm-directory "/tmp"))
-  (elpm-bootstrap)
-  (elpm-use-packages
+(elpm-use-packages
    '(evil
-     (el-patch :type git :host github :repo "raxod502/el-patch"))))
+     (el-patch :type git :host github :repo "raxod502/el-patch"))
+    "/tmp")
       #+end_src
 2. Use the packages installed in =/tmp/straight=
    #+begin_src elisp
 (require 'elpm)
-(elpm-bootstrap "/tmp")
+(elpm-use-all "/tmp")
 (require 'evil)
 (evil-mode)
    #+end_src
@@ -49,18 +48,20 @@ elpm evil \
 * The CLI
 This is the =elpm= cli definition.
 #+begin_src elisp :tangle bin/elpm :shebang #!/usr/bin/env -S emacs -Q --script # -*- mode: emacs-lisp; lexical-binding: t; -*-
-(add-to-list 'load-path
-             (replace-regexp-in-string "bin/[^/]+$" "" load-file-name))
+(require 'elpm
+         (concat (file-name-directory
+                  (file-truename load-file-name))
+                 "../elpm.el"))
 
-(require 'elpm)
-(let ((elpm-directory default-directory))
-  (elpm-bootstrap)
-  (when argv
-    (elpm-use-packages
-     (mapcar
-      (lambda (arg)
-        (car (read-from-string arg)))
-      argv))))
+(defun read-recipes (argv)
+  (mapcar
+   #'(lambda (arg) (car (read-from-string arg)))
+   argv))
+
+(elpm-use-packages
+ (read-recipes argv)
+ default-directory
+ t)
 #+end_src
 * Package file
 The =elpm-packages.el= file records what packages have been installed. Here is an example of what one looks like:

@@ -1,13 +1,15 @@
 #!/usr/bin/env -S emacs -Q --script # -*- mode: emacs-lisp; lexical-binding: t; -*-
-(add-to-list 'load-path
-             (replace-regexp-in-string "bin/[^/]+$" "" load-file-name))
+(require 'elpm
+         (concat (file-name-directory
+                  (file-truename load-file-name))
+                 "../elpm.el"))
 
-(require 'elpm)
-(let ((elpm-directory default-directory))
-  (elpm-bootstrap)
-  (when argv
-    (elpm-use-packages
-     (mapcar
-      (lambda (arg)
-        (car (read-from-string arg)))
-      argv))))
+(defun read-recipes (argv)
+  (mapcar
+   #'(lambda (arg) (car (read-from-string arg)))
+   argv))
+
+(elpm-use-packages
+ (read-recipes argv)
+ default-directory
+ t)

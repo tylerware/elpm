@@ -27,41 +27,52 @@
 (defvar elpm-directory user-emacs-directory
   "The directory to install packages into.")
 
-(defun elpm-use-packages (recipes &optional directory)
+(defun elpm-use-packages (recipes &optional directory wait)
   "Load / install RECIPES in the DIRECTORY.
 
 If DIRECTORY is not defined then `elpm-directory' is used.
 
 Note that this also loads all previously installed packages in DIRECTORY."
-  (elpm--async
-   `(progn
-      (require 'elpm)
-      (let ((elpm-directory ,(or directory elpm-directory))
-            (original-load-path load-path))
+  (let ((p
+         (elpm--async
+          `(progn
+             (require 'elpm)
+             (let ((elpm-directory ,(or directory elpm-directory))
+                   (original-load-path load-path))
 
-        ;; Bootstrap straight
-        (elpm--straight)
-        ;; Make sure we have all the current packages
-        (elpm-use-packages--intern (plist-get
-                                    (elpm-get-packages-plist)
-                                    :recipes))
-        ;; Add new recipes
-        (elpm-use-packages--intern ',recipes)
-        ;; Take the diff of the load path to return to the parent process
-        (message
-         (prin1-to-string
-          (seq-difference load-path original-load-path)))))
-   #'(lambda (process &optional _ignore)
-       (when (memq (process-status process) '(exit signal))
-         (let ((load-path-additions (with-current-buffer (process-buffer process)
-                                      (goto-char (point-max))
-                                      (backward-sexp)
-                                      (car
-                                       (read-from-string (thing-at-point 'list))))))
-           (when (listp load-path-additions)
-             (dolist (path load-path-additions)
-               (when (stringp path)
-                 (add-to-list 'load-path path)))))))))
+               ;; Bootstrap straight
+               (elpm--straight)
+               ;; Make sure we have all the current packages
+               (elpm-use-packages--intern (plist-get
+                                           (elpm-get-packages-plist)
+                                           :recipes))
+               ;; Add new recipes
+               (elpm-use-packages--intern ',recipes)
+               ;; Take the diff of the load path to return to the parent process
+               (message
+                "elpm-load-path: %s"
+                (prin1-to-string
+                 (seq-difference load-path original-load-path)))))
+          #'(lambda (process &optional _ignore)
+              (when (memq (process-status process) '(exit signal))
+                (let ((load-path-additions (with-current-buffer (process-buffer process)
+                                             (car (read-from-string (buffer-string))))))
+                  (when (listp load-path-additions)
+                    (dolist (path load-path-additions)
+                      (when (stringp path)
+                        (add-to-list 'load-path path))))))))))
+
+    (set-process-filter p (lambda (p output)
+                            (setq output (replace-regexp-in-string "\n$" "" output))
+                            (if (string-match-p "^elpm-load-path:" output)
+                                (with-current-buffer (process-buffer p)
+                                  (point-max)
+                                  (insert (replace-regexp-in-string "elpm-load-path:" "" output)))
+                                (message output))))
+    (when wait
+      (while (memq p (process-list))
+        (sleep-for 0.5)))))
+
 
 (defun elpm-use-package (recipe &optional directory)
   "Load / install a RECIPE in the DIRECTORY.
@@ -121,7 +132,9 @@ See `elpm-use-packages' for more."
   "Execute SEXP asyncronously in a new instance of Emacs.
 
 This allows for a sandbox environment. The SENTINEL-FN allows
-reporting of the results."
+reporting of the results.
+
+Returns the process."
   (let* ((buf (generate-new-buffer " *elpm-async*"))
          (p (start-process
              "emacs"
@@ -132,7 +145,8 @@ reporting of the results."
              "--batch"
              "--eval"
              (prin1-to-string sexp))))
-    (set-process-sentinel p sentinel-fn)))
+    (set-process-sentinel p sentinel-fn)
+    p))
 
 (defun elpm--straight ()
   "Bootstrap straight.el."
