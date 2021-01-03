@@ -1,4 +1,8 @@
 #!/usr/bin/env -S emacs -Q --script # -*- mode: emacs-lisp; lexical-binding: t; -*-
+;; The CLI
+;; This is the =elpm= cli definition -- just a convenient wrapper around the =elpm= package.
+
+;; [[file:../README.org::*The CLI][The CLI:1]]
 (require 'elpm
          (concat (file-name-directory
                   (file-truename load-file-name))
@@ -13,3 +17,4 @@
  (read-recipes argv)
  default-directory
  t)
+;; The CLI:1 ends here

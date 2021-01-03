@@ -2,7 +2,8 @@
 /A elisp package manager with a cli/
 
 * About
-I want to be able to install packages and use them without being married to any particular emacs framework (like doom, spacemacs or my own config). Anyway, this package uses =straight.el= to do the actual heavy lifting of managing the packages. This package adds a package file, =elpm-packages.el=, a cli for installing packages (=elpm=) and the ability to load packages (relatively easily) into any emacs instance -- in doom, spacemacs & even in =emacs -Q=.
+I want to be able to install packages and use them without being married to any particular emacs framework (like doom, spacemacs or my own config). Anyway, this package uses =straight.el= to do the actual heavy lifting of managing the packages. This package adds a package file, =elpm-packages.el=, a CLI for installing packages (=elpm=) and the ability to load packages (relatively easily) into any emacs instance -- in doom, spacemacs & even in =emacs -Q=. It is worth noting that the installation of packages is asynchronous and all usage of straight is sandboxed in a separate emacs subprocess.
+
 * Quick start
 ** Setup
 1. Clone this repo to your favorite location
@@ -18,10 +19,15 @@ export EMACSLOADPATH="${EMACSLOADPATH}:/path/to/elmp"
      #+begin_src elisp
 (add-to-list 'load-path "/path/to/elmp")
      #+end_src
+   - By creating a symlink to the file to your system's =site-lisp= directory
 3. Add =./bin= to your systems =PATH= environment variable
+     #+begin_src bash
+export PATH="${PATH}:/path/to/elmp/bin"
+     #+end_src
 
 ** Basic usage
-1. Install some packages (into =/tmp/straight=)
+Example installing / using packages installed in the =/tmp= directory
+1. Install some packages
    - via CLI
      #+begin_src bash
 cd /tmp
@@ -36,7 +42,7 @@ elpm evil \
      (el-patch :type git :host github :repo "raxod502/el-patch"))
     "/tmp")
       #+end_src
-2. Use the packages installed in =/tmp/straight=
+2. Use the packages installed in =/tmp=
    #+begin_src elisp
 (require 'elpm)
 (elpm-use-all "/tmp")
@@ -46,8 +52,8 @@ elpm evil \
    You can use the packages you installed in any emacs instance.
 
 * The CLI
-This is the =elpm= cli definition.
-#+begin_src elisp :tangle bin/elpm :shebang #!/usr/bin/env -S emacs -Q --script # -*- mode: emacs-lisp; lexical-binding: t; -*-
+This is the =elpm= cli definition -- just a convenient wrapper around the =elpm= package.
+#+begin_src elisp :comments both :tangle bin/elpm :shebang #!/usr/bin/env -S emacs -Q --script # -*- mode: emacs-lisp; lexical-binding: t; -*-
 (require 'elpm
          (concat (file-name-directory
                   (file-truename load-file-name))
@@ -71,4 +77,4 @@ The =elpm-packages.el= file records what packages have been installed. Here is a
  (evil
   (el-patch :type git :host github :repo "raxod502/el-patch")))
 #+end_src
-Installing a package with =(elpm-use-package ...)= or =elpm= will add to the =:recipes= section of the file. It's worth noting that any packages that are listed in =:recipes= that aren't installed will be installed during the next running of =elpm= or =(elpm-bootstrap)=.
+Installing a package with =(elpm-use-package ...)= or =elpm= will add to the =:recipes= section of the file. It's worth noting that any packages that are listed in =:recipes= that aren't installed will be installed during the next running of =elpm= or =(elpm-use-all)=.
