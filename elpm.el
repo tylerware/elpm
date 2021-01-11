@@ -142,6 +142,7 @@ Returns the process."
              (file-truename
               (expand-file-name invocation-name
                                 invocation-directory))
+             "-Q"
              "--batch"
              "--eval"
              (prin1-to-string sexp))))
@@ -150,9 +151,7 @@ Returns the process."
 
 (defun elpm--straight ()
   "Bootstrap straight.el."
-  (let* ((user-emacs-directory elpm-directory)
-         (straight-base-dir elpm-directory)
-         (straight-repository-branch "master"))
+  (let ((user-emacs-directory elpm-directory))
     (defvar bootstrap-version)
     (let ((bootstrap-file
            (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
