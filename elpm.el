@@ -70,8 +70,6 @@ Note that this also loads all previously installed packages in DIRECTORY."
                        (load-path-additions (plist-get details :load-path))
                        (info-directory-list-additions (plist-get details :info-directory-list)))
 
-                  (message "%s" details)
-
                   (when (listp load-path-additions)
                     (dolist (path load-path-additions)
                       (when (stringp path)
