@@ -37,8 +37,10 @@ Note that this also loads all previously installed packages in DIRECTORY."
          (elpm--async
           `(progn
              (require 'elpm)
+             (require 'info)
              (let ((elpm-directory ,(or directory elpm-directory))
-                   (original-load-path load-path))
+                   (original-load-path load-path)
+                   (original-Info-directory-list Info-directory-list))
 
                ;; Bootstrap straight
                (elpm--straight)
@@ -50,28 +52,57 @@ Note that this also loads all previously installed packages in DIRECTORY."
                (elpm-use-packages--intern ',recipes)
                ;; Take the diff of the load path to return to the parent process
                (message
-                "elpm-load-path: %s"
+                "##elpm-details:begin## 
+%s
+##elpm-details:begin##"
                 (prin1-to-string
-                 (seq-difference load-path original-load-path)))))
+                 (list :load-path (seq-difference load-path original-load-path)
+                       :info-directory-list (seq-difference Info-directory-list original-Info-directory-list))))))
           #'(lambda (process &optional _ignore)
               (when (memq (process-status process) '(exit signal))
-                (let ((load-path-additions (with-current-buffer (process-buffer process)
-                                             (car (read-from-string (buffer-string))))))
+                
+                (let* ((details (with-current-buffer (process-buffer process)
+                                  (while (and (bolp)
+                                              (eolp)
+                                              (not (eq (point) (point-max))))
+                                      (forward-line))
+                                  (car (read-from-string (buffer-string)))))
+                       (load-path-additions (plist-get details :load-path))
+                       (info-directory-list-additions (plist-get details :info-directory-list)))
+
+                  (message "%s" details)
+
                   (when (listp load-path-additions)
                     (dolist (path load-path-additions)
                       (when (stringp path)
-                        (add-to-list 'load-path path))))))))))
+                        (add-to-list 'load-path path))))
+
+                  (when (listp info-directory-list-additions)
+                    (dolist (dir info-directory-list-additions)
+                      (when (stringp dir)
+                        (add-to-list 'Info-directory-list dir))))))))))
 
     (set-process-filter p (lambda (p output)
                             (setq output (replace-regexp-in-string "\n$" "" output))
-                            (if (string-match-p "^elpm-load-path:" output)
+                            (when (string-match-p "^##elpm-details:begin##" output)
+                              (setq elpm--consuming-elpm-details t
+                                    output (replace-regexp-in-string "##elpm-details:begin##" "" output)))
+                            (if elpm--consuming-elpm-details 
                                 (with-current-buffer (process-buffer p)
+                                  (when (string-match-p "##elpm-details:end##" output)
+                                    (setq elpm--consuming-elpm-details nil 
+                                          output (replace-regexp-in-string "##elpm-details:end##.*" "" output)))
                                   (point-max)
-                                  (insert (replace-regexp-in-string "elpm-load-path:" "" output)))
-                                (message output))))
+                                  (insert output))
+                              (message output))))
     (when wait
       (while (memq p (process-list))
         (sleep-for 0.5)))))
+
+
+(defvar elpm--consuming-elpm-details nil
+  "elpm running in the subprocess send feedback that is buffered. This variable
+indicates that we are reading data from the subprocess (specifically lisp data)")
 
 
 (defun elpm-use-package (recipe &optional directory)
