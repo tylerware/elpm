@@ -21,6 +21,7 @@
 ;;
 ;;; Code:
 (require 'seq)
+(require 'info)
 
 (defconst elpm-version 0)
 
@@ -34,7 +35,7 @@ If DIRECTORY is not defined then `elpm-directory' is used.
 
 Note that this also loads all previously installed packages in DIRECTORY."
   (let ((p
-         (elpm--async
+         (funcall (if wait #'elpm--sync #'elpm--async)
           `(progn
              (require 'elpm)
              (require 'info)
@@ -52,50 +53,54 @@ Note that this also loads all previously installed packages in DIRECTORY."
                (elpm-use-packages--intern ',recipes)
                ;; Take the diff of the load path to return to the parent process
                (message
-                "##elpm-details:begin## 
+                "##elpm-details:begin##
 %s
-##elpm-details:begin##"
+##elpm-details:end##"
                 (prin1-to-string
                  (list :load-path (seq-difference load-path original-load-path)
                        :info-directory-list (seq-difference Info-directory-list original-Info-directory-list))))))
           #'(lambda (process &optional _ignore)
               (when (memq (process-status process) '(exit signal))
-                
-                (let* ((details (with-current-buffer (process-buffer process)
-                                  (while (and (bolp)
-                                              (eolp)
-                                              (not (eq (point) (point-max))))
-                                      (forward-line))
-                                  (car (read-from-string (buffer-string)))))
-                       (load-path-additions (plist-get details :load-path))
-                       (info-directory-list-additions (plist-get details :info-directory-list)))
+                (elpm--process-output-buffer (process-buffer process)))))))
 
-                  (when (listp load-path-additions)
-                    (dolist (path load-path-additions)
-                      (when (stringp path)
-                        (add-to-list 'load-path path))))
+    (if (bufferp p)
+        (elpm--process-output-buffer p)
+      (set-process-filter p (lambda (p output)
+                              (setq output (replace-regexp-in-string "\n$" "" output))
+                              (when (string-match-p "^##elpm-details:begin##" output)
+                                (setq elpm--consuming-elpm-details t))
+                              (if elpm--consuming-elpm-details 
+                                  (with-current-buffer (process-buffer p)
+                                    (when (string-match-p "##elpm-details:end##" output)
+                                      (setq elpm--consuming-elpm-details nil))
+                                    (goto-char (point-max))
+                                    (insert output))
+                                (message output)))))))
 
-                  (when (listp info-directory-list-additions)
-                    (dolist (dir info-directory-list-additions)
-                      (when (stringp dir)
-                        (add-to-list 'Info-directory-list dir))))))))))
 
-    (set-process-filter p (lambda (p output)
-                            (setq output (replace-regexp-in-string "\n$" "" output))
-                            (when (string-match-p "^##elpm-details:begin##" output)
-                              (setq elpm--consuming-elpm-details t
-                                    output (replace-regexp-in-string "##elpm-details:begin##" "" output)))
-                            (if elpm--consuming-elpm-details 
-                                (with-current-buffer (process-buffer p)
-                                  (when (string-match-p "##elpm-details:end##" output)
-                                    (setq elpm--consuming-elpm-details nil 
-                                          output (replace-regexp-in-string "##elpm-details:end##.*" "" output)))
-                                  (point-max)
-                                  (insert output))
-                              (message output))))
-    (when wait
-      (while (memq p (process-list))
-        (sleep-for 0.5)))))
+(defun elpm--process-output-buffer (buffer)
+  "Process the output BUFFER.
+
+This loads values into `load-path'and into `Info-directory-list'.
+"
+  (let* ((details (with-current-buffer buffer 
+                    (goto-char (point-min))
+                    (while (re-search-forward "^##elpm-details:\\(begin\\|end\\)##$" nil t)
+                      (kill-whole-line))
+                    (goto-char (point-min))
+                    (car (read-from-string (buffer-string)))))
+         (load-path-additions (plist-get details :load-path))
+         (info-directory-list-additions (plist-get details :info-directory-list)))
+
+    (when (listp load-path-additions)
+      (dolist (path load-path-additions)
+        (when (stringp path)
+          (add-to-list 'load-path path))))
+
+    (when (listp info-directory-list-additions)
+      (dolist (dir info-directory-list-additions)
+        (when (stringp dir)
+          (add-to-list 'Info-directory-list dir))))))
 
 
 (defvar elpm--consuming-elpm-details nil
@@ -178,6 +183,26 @@ Returns the process."
     (set-process-sentinel p sentinel-fn)
     p))
 
+(defun elpm--sync (sexp _)
+  "Execute SEXP syncronously in a new instance of Emacs.
+
+This allows for a sandbox environment."
+  (message "Running...")
+  (let ((buf (generate-new-buffer " *elpm-sync*")))
+         (call-process
+          ;; emacs binary
+          (file-truename
+           (expand-file-name invocation-name
+                             invocation-directory))
+          nil
+          buf
+          nil
+          "-Q"
+          "--batch"
+          "--eval"
+          (prin1-to-string sexp))
+         buf))
+
 (defun elpm--straight ()
   "Bootstrap straight.el."
   (let ((user-emacs-directory elpm-directory))
@@ -193,6 +218,53 @@ Returns the process."
           (goto-char (point-max))
           (eval-print-last-sexp)))
       (load bootstrap-file nil 'nomessage))))
+
+(defun elpm-update-recipes (&optional directory)
+  (interactive)
+  (let ((p (elpm--sync
+   `(progn
+      (require 'elpm)
+      (let ((elpm-directory ,(or directory elpm-directory))
+            (original-load-path load-path))
+
+        ;; Bootstrap straight
+        (elpm--straight)
+        (let ((user-emacs-directory elpm-directory))
+          )))
+   #'(lambda (a b) nil))))
+
+    (set-process-filter p (lambda (_p output)
+                            (message (replace-regexp-in-string "\n$" "" output))))))
+
+(defmacro elpm--make-simple-command (command-name &rest sexp)
+  `(defun ,(intern (concat "elpm-" (symbol-name command-name)))
+       (&optional directory)
+       (interactive)
+       (let* ((sexp ',sexp)
+              (p (elpm--async
+                 `(progn
+                   (require 'elpm)
+                   (let ((elpm-directory ,(or directory elpm-directory))
+                         (original-load-path load-path))
+
+                     ;; Bootstrap straight
+                     (elpm--straight)
+                     (let ((user-emacs-directory elpm-directory))
+                       ,@sexp)))
+                 #'(lambda (a b) nil))))
+
+         (set-process-filter p (lambda (_p output)
+                                 (message (replace-regexp-in-string "\n$" "" output))))
+
+         p)))
+
+
+(elpm--make-simple-command update-recipes 
+                           (straight-pull-recipe-repositories))
+
+(elpm--make-simple-command update-packages 
+                           (straight-pull-all))
+
 
 (defun elpm-use-packages--intern (recipes)
   "Add RECIPES to the `elpm-directory'."
