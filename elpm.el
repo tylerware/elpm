@@ -200,7 +200,6 @@ Returns the process."
 This allows for a sandbox environment."
   (message "Running...")
   (let ((buf (generate-new-buffer " *elpm-sync*")))
-    (pop-to-buffer buf)
     (call-process
      ;; emacs binary
      (file-truename
@@ -208,7 +207,7 @@ This allows for a sandbox environment."
                         invocation-directory))
      nil
      buf
-     t 
+     nil 
      "-Q"
      "--batch"
      "--eval"
